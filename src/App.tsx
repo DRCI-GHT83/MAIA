@@ -1,10 +1,11 @@
+// App.tsx
+// Composant principal de l'application, intégrant la collapsibilité pour les sections Publications de Référence et Outils de Recherche.
 import React, { useState, useEffect } from 'react';
 import {
   PlusCircle,
   X,
   Search,
   Download,
-  Edit2,
   Moon,
   Sun,
   ChevronDown,
@@ -16,383 +17,103 @@ import {
   Edit,
 } from 'lucide-react';
 import { supabase } from './supabase';
+import {
+  PublicationDisplay,
+  PublicationDisplayProps,
+} from './components/PublicationDisplay';
+import {
+  PublicationEditor,
+  PublicationEditorProps,
+} from './components/PublicationEditor';
+import {
+  SearchTool,
+  SavedAnalysis,
+  AnalysisResult,
+  ParsedPublication,
+  EditingState,
+} from './interfaces';
+import { normalizeTitle, parsePublication, splitPublications } from './utils';
+import { Header } from './components/Header';
+import { ReferencePublicationInput } from './components/ReferencePublicationInput';
+import { ReferencePublicationList } from './components/ReferencePublicationList';
+import { SearchToolsSection } from './components/SearchToolsSection';
+import { AnalysisResultsSection } from './components/AnalysisResultsSection';
+import { SaveAnalysisDialog } from './components/SaveAnalysisDialog';
+import { LoadAnalysisDialog } from './components/LoadAnalysisDialog';
+import { LoginDialog } from './components/LoginDialog';
 
 //////////////////////
-// Interfaces
+// Composant App
 //////////////////////
-
-interface SearchTool {
-  id: string;
-  name: string;
-  results: string;
-}
-
-interface SavedAnalysis {
-  id: string;
-  name: string;
-  reference_publications: string;
-  created_at: string;
-}
-
-interface AnalysisResult {
-  referencePresence: {
-    publication: string;
-    presence: { [toolId: string]: boolean };
-    parsed: ParsedPublication;
-  }[];
-  otherArticles: {
-    article: string;
-    presence: { [toolId: string]: boolean };
-    parsed: ParsedPublication;
-  }[];
-}
-
-interface ParsedPublication {
-  title: string;
-  authors: string[];
-  year?: string;
-  journal?: string;
-  doi?: string;
-}
-
-interface EditingState {
-  id: string;
-  type: 'reference' | 'other';
-  publication: ParsedPublication;
-}
-
-interface PublicationDisplayProps {
-  publication: ParsedPublication;
-  onEdit: () => void;
-  expanded: boolean;
-  onToggleExpand: () => void;
-  onDelete: () => void;
-  type: 'reference' | 'other';
-  index: number;
-  darkMode: boolean;
-}
-
-//////////////////////
-// Helper Functions from Original Code
-//////////////////////
-
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .trim();
-}
-
-function parsePublication(text: string): ParsedPublication {
-  const lines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-  let authors: string[] = [];
-  let year: string | undefined;
-  let title: string = '';
-  let journal: string | undefined;
-  let doi: string | undefined;
-
-  for (const line of lines) {
-    if (line.startsWith('Auteurs :')) {
-      const authorsText = line.replace('Auteurs :', '').trim();
-      authors = authorsText
-        .split(/[,;]/)
-        .map((author) => author.trim())
-        .filter(
-          (author) =>
-            author.length > 0 &&
-            !author.includes('Study Group') &&
-            !author.includes('Investigators')
-        );
-    } else if (line.startsWith('Date de publication :')) {
-      const dateText = line.replace('Date de publication :', '').trim();
-      const yearMatch = dateText.match(/\b(19|20)\d{2}\b/);
-      if (yearMatch) {
-        year = yearMatch[0];
-      }
-    } else if (line.startsWith('Titre complet :')) {
-      title = line.replace('Titre complet :', '').trim();
-    } else if (line.startsWith('Journal :')) {
-      journal = line.replace('Journal :', '').trim();
-    } else if (line.startsWith('DOI :')) {
-      doi = line.replace('DOI :', '').trim();
-      if (!doi.startsWith('PMID:')) {
-        const doiMatch = doi.match(/\b(10\.\d{4,}(?:\.\d+)*\/[^.\s]+)\b/);
-        if (doiMatch) {
-          doi = doiMatch[1];
-        }
-      }
-    }
-  }
-
-  return {
-    title: title || 'Sans titre',
-    authors: authors.map((author) => author.trim()).filter(Boolean),
-    year,
-    journal,
-    doi,
-  };
-}
-
-function PublicationEditor({
-  publication,
-  onSave,
-  onCancel,
-  darkMode,
-}: {
-  publication: ParsedPublication;
-  onSave: (edited: ParsedPublication) => void;
-  onCancel: () => void;
-  darkMode: boolean;
-}) {
-  const [edited, setEdited] = useState<ParsedPublication>({ ...publication });
-
-  const inputClassName = `w-full p-2 border rounded-md ${
-    darkMode
-      ? 'bg-gray-800 border-gray-600 text-white'
-      : 'bg-white border-gray-300 text-gray-900'
-  }`;
-
-  return (
-    <div
-      className={`space-y-4 p-4 rounded-md ${
-        darkMode ? 'bg-gray-700' : 'bg-gray-50'
-      }`}
-    >
-      <div>
-        <label
-          className={`block text-sm font-medium ${
-            darkMode ? 'text-gray-300' : 'text-gray-700'
-          } mb-1`}
-        >
-          Titre
-        </label>
-        <input
-          type="text"
-          value={edited.title}
-          onChange={(e) => setEdited({ ...edited, title: e.target.value })}
-          className={inputClassName}
-        />
-      </div>
-
-      <div>
-        <label
-          className={`block text-sm font-medium ${
-            darkMode ? 'text-gray-300' : 'text-gray-700'
-          } mb-1`}
-        >
-          Auteurs (un par ligne)
-        </label>
-        <textarea
-          value={edited.authors.join('\n')}
-          onChange={(e) =>
-            setEdited({
-              ...edited,
-              authors: e.target.value
-                .split('\n')
-                .map((a) => a.trim())
-                .filter(Boolean),
-            })
-          }
-          className={`${inputClassName} h-24`}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label
-            className={`block text-sm font-medium ${
-              darkMode ? 'text-gray-300' : 'text-gray-700'
-            } mb-1`}
-          >
-            Année
-          </label>
-          <input
-            type="text"
-            value={edited.year || ''}
-            onChange={(e) => setEdited({ ...edited, year: e.target.value })}
-            className={inputClassName}
-          />
-        </div>
-
-        <div>
-          <label
-            className={`block text-sm font-medium ${
-              darkMode ? 'text-gray-300' : 'text-gray-700'
-            } mb-1`}
-          >
-            Journal
-          </label>
-          <input
-            type="text"
-            value={edited.journal || ''}
-            onChange={(e) => setEdited({ ...edited, journal: e.target.value })}
-            className={inputClassName}
-          />
-        </div>
-      </div>
-
-      <div>
-        <label
-          className={`block text-sm font-medium ${
-            darkMode ? 'text-gray-300' : 'text-gray-700'
-          } mb-1`}
-        >
-          DOI
-        </label>
-        <input
-          type="text"
-          value={edited.doi || ''}
-          onChange={(e) => setEdited({ ...edited, doi: e.target.value })}
-          className={inputClassName}
-          placeholder="10.xxxx/xxxxx"
-        />
-      </div>
-
-      <div className="flex justify-end gap-2 mt-4">
-        <button
-          onClick={() => onCancel()}
-          className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
-        >
-          Annuler
-        </button>
-        <button
-          onClick={() => onSave(edited)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          Enregistrer
-        </button>
-      </div>
-    </div>
-  );
-}
-
-//////////////////////
-// PublicationDisplay Component - Modified to include delete and type/index props
-//////////////////////
-
-function PublicationDisplay({
-  publication,
-  onEdit,
-  expanded,
-  onToggleExpand,
-  onDelete,
-  type,
-  index,
-  darkMode,
-}: PublicationDisplayProps) {
-  return (
-    <div
-      className={`space-y-2 p-2 rounded-md ${
-        darkMode ? 'bg-gray-800 text-white' : ''
-      }`}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <div className="font-medium flex items-center gap-2">
-            {publication.title}
-            <button
-              onClick={onToggleExpand}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
-          </div>
-          {expanded && (
-            <>
-              {publication.authors.length > 0 && (
-                <div className="text-sm text-gray-600 mt-1">
-                  Auteurs : {publication.authors.join(', ')}
-                </div>
-              )}
-              <div className="text-sm text-gray-500 mt-1">
-                {publication.year && (
-                  <span className="mr-2">Année : {publication.year}</span>
-                )}
-                {publication.journal && (
-                  <span>Journal : {publication.journal}</span>
-                )}
-              </div>
-              {publication.doi && (
-                <div className="text-sm text-blue-600 mt-1">
-                  <a
-                    href={`https://doi.org/${publication.doi}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    DOI : {publication.doi}
-                  </a>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onEdit}
-            className="px-2 py-1 text-gray-400 hover:text-blue-600 border border-gray-200 rounded-md hover:border-blue-600"
-          >
-            <Edit2 size={16} className={darkMode ? 'text-blue-400' : ''} />
-          </button>
-          <button
-            onClick={() => onDelete(index, type)}
-            className="px-2 py-1 text-gray-400 hover:text-red-600 border border-gray-200 rounded-md hover:border-red-600"
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-//////////////////////
-// App Component - Merged and Modified
-//////////////////////
-
 function App() {
   //////////////////////
   // États principaux
   //////////////////////
+  // État pour le mode sombre
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('darkMode') === 'true';
     }
     return false;
   });
+  // Publications de référence entrées par l'utilisateur (texte brut)
   const [referencePublications, setReferencePublications] =
     useState<string>('');
+  // Publications de référence parsées
   const [parsedReferencePublications, setParsedReferencePublications] =
     useState<ParsedPublication[]>([]);
+  // Outils de recherche configurés
   const [searchTools, setSearchTools] = useState<SearchTool[]>([]);
+  // Résultats de l'analyse
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult | null>(
     null
   );
+  // État d'édition d'une publication
   const [editing, setEditing] = useState<EditingState | null>(null);
+  // Ensemble des publications étendues pour l'affichage détaillé
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  // Utilisateur courant
   const [user, setUser] = useState<any>(null);
+  // Analyses sauvegardées pour l'utilisateur
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
+  // Nom de l'analyse en cours de sauvegarde
   const [currentAnalysisName, setCurrentAnalysisName] = useState<string>('');
+  // Visibilité du dialogue de sauvegarde
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  // Visibilité du dialogue de chargement
   const [showLoadDialog, setShowLoadDialog] = useState(false);
+  // Outil de recherche en cours de drag
   const [draggedTool, setDraggedTool] = useState<string | null>(null);
+  // Outil de recherche sur lequel on drag
   const [dragOverTool, setDragOverTool] = useState<string | null>(null);
+  // État d'analyse en cours
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // État d'expansion de la liste des références
   const [isReferenceListExpanded, setIsReferenceListExpanded] = useState(true);
+  // État d'expansion de la section Publications de Référence
+  const [isReferenceInputExpanded, setIsReferenceInputExpanded] =
+    useState(true);
+  // État d'expansion de la section Outils de Recherche
+  const [isSearchToolsExpanded, setIsSearchToolsExpanded] = useState(true);
+  // ID de l'analyse en cours de renommage
   const [renameAnalysisId, setRenameAnalysisId] = useState<string | null>(null);
+  // Nouveau nom pour l'analyse en cours de renommage
   const [newAnalysisName, setNewAnalysisName] = useState<string>('');
 
   // États pour l'authentification par email/mot de passe
+  // Visibilité du dialogue de connexion
   const [showLoginDialog, setShowLoginDialog] = useState(false);
+  // Email pour la connexion/inscription
   const [email, setEmail] = useState('');
+  // Mot de passe pour la connexion/inscription
   const [password, setPassword] = useState('');
+  // État d'inscription (true) ou de connexion (false)
   const [isRegistering, setIsRegistering] = useState(false);
 
   //////////////////////
   // Effets
   //////////////////////
+  // Effet pour appliquer le mode sombre ou clair au document
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -402,6 +123,7 @@ function App() {
     localStorage.setItem('darkMode', darkMode.toString());
   }, [darkMode]);
 
+  // Effet pour gérer l'état de session de l'utilisateur Supabase
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -416,12 +138,14 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Effet pour charger les analyses sauvegardées au chargement de l'utilisateur
   useEffect(() => {
     if (user) {
       loadSavedAnalyses();
     }
   }, [user]);
 
+  // Effet pour parser les publications de référence à chaque changement du texte brut
   useEffect(() => {
     setParsedReferencePublications(
       splitPublications(referencePublications).map(parsePublication)
@@ -431,6 +155,7 @@ function App() {
   //////////////////////
   // Fonctions d'authentification
   //////////////////////
+  // Fonction pour gérer la connexion ou l'inscription de l'utilisateur
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const { error } = isRegistering
@@ -446,6 +171,7 @@ function App() {
     }
   };
 
+  // Fonction pour gérer la déconnexion de l'utilisateur
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -456,6 +182,7 @@ function App() {
   //////////////////////
   // Chargement des analyses sauvegardées
   //////////////////////
+  // Fonction pour charger la liste des analyses sauvegardées depuis Supabase
   const loadSavedAnalyses = async () => {
     if (!user) return;
     const { data, error } = await supabase
@@ -474,6 +201,7 @@ function App() {
   //////////////////////
   // Sauvegarde d'une analyse
   //////////////////////
+  // Fonction pour sauvegarder l'analyse courante dans Supabase
   const handleSaveAnalysis = async () => {
     if (!user) {
       alert('Veuillez vous connecter pour sauvegarder une analyse');
@@ -531,6 +259,7 @@ function App() {
   //////////////////////
   // Chargement et édition d'une analyse sauvegardée
   //////////////////////
+  // Fonction pour charger une analyse sauvegardée et ses outils de recherche
   const handleLoadAnalysis = async (analysisId: string) => {
     const { data: analysis, error: analysisError } = await supabase
       .from('analyses')
@@ -568,6 +297,7 @@ function App() {
     setShowLoadDialog(false);
   };
 
+  // Fonction pour démarrer le renommage d'une analyse
   const handleRenameAnalysisStart = (
     analysisId: string,
     currentName: string
@@ -576,11 +306,13 @@ function App() {
     setNewAnalysisName(currentName);
   };
 
+  // Fonction pour annuler le renommage d'une analyse
   const handleRenameAnalysisCancel = () => {
     setRenameAnalysisId(null);
     setNewAnalysisName('');
   };
 
+  // Fonction pour confirmer le renommage d'une analyse et mettre à jour dans Supabase
   const handleRenameAnalysisConfirm = async (analysisId: string) => {
     if (!newAnalysisName.trim()) {
       alert("Veuillez entrer un nouveau nom pour l'analyse.");
@@ -602,6 +334,7 @@ function App() {
     }
   };
 
+  // Fonction pour supprimer une analyse et ses outils de recherche associés
   const handleDeleteAnalysis = async (analysisId: string) => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer cette analyse ?')) {
       const { error: toolsError } = await supabase
@@ -638,6 +371,7 @@ function App() {
   //////////////////////
   // Gestion des outils de recherche (ajout, suppression, mise à jour, drag & drop)
   //////////////////////
+  // Fonction pour ajouter un nouvel outil de recherche vide
   const addSearchTool = () => {
     const newTool: SearchTool = {
       id: Date.now().toString(),
@@ -647,10 +381,12 @@ function App() {
     setSearchTools([...searchTools, newTool]);
   };
 
+  // Fonction pour supprimer un outil de recherche par son ID
   const removeSearchTool = (id: string) => {
     setSearchTools(searchTools.filter((tool) => tool.id !== id));
   };
 
+  // Fonction pour mettre à jour un champ d'un outil de recherche
   const updateSearchTool = (
     id: string,
     field: 'name' | 'results',
@@ -663,6 +399,7 @@ function App() {
     );
   };
 
+  // Fonction pour gérer le début du drag d'un outil de recherche
   const handleDragStart = (
     e: React.DragEvent<HTMLDivElement>,
     toolId: string
@@ -671,12 +408,14 @@ function App() {
     e.currentTarget.classList.add('opacity-50');
   };
 
+  // Fonction pour gérer la fin du drag d'un outil de recherche
   const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
     setDraggedTool(null);
     setDragOverTool(null);
     e.currentTarget.classList.remove('opacity-50');
   };
 
+  // Fonction pour gérer le drag over sur un outil de recherche
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
     toolId: string
@@ -686,6 +425,7 @@ function App() {
     setDragOverTool(toolId);
   };
 
+  // Fonction pour gérer le drop d'un outil de recherche sur un autre et réordonner la liste
   const handleDrop = (
     e: React.DragEvent<HTMLDivElement>,
     targetToolId: string
@@ -712,7 +452,7 @@ function App() {
   //////////////////////
   // Analyse Results Function - From Original Code - Modified for current state
   //////////////////////
-
+  // Fonction principale pour analyser les résultats et déterminer la présence des références
   const analyzeResults = async () => {
     setIsAnalyzing(true);
     const references = splitPublications(referencePublications);
@@ -789,6 +529,7 @@ function App() {
     setIsAnalyzing(false);
   };
 
+  // Fonction pour démarrer l'édition d'une publication (référence ou autre)
   const handleEdit = (
     id: string,
     type: 'reference' | 'other',
@@ -797,6 +538,7 @@ function App() {
     setEditing({ id, type, publication });
   };
 
+  // Fonction pour sauvegarder les modifications d'une publication
   const handleSaveEdit = (edited: ParsedPublication) => {
     if (!editing || !analysisResults) return;
 
@@ -823,6 +565,7 @@ function App() {
     setEditing(null);
   };
 
+  // Fonction pour supprimer un article (référence ou autre) de la liste et des résultats
   const removeArticle = (index: number, type: 'reference' | 'other') => {
     if (type === 'reference') {
       const publications = splitPublications(referencePublications);
@@ -839,6 +582,7 @@ function App() {
     }
   };
 
+  // Fonction pour basculer l'état étendu d'un élément (publication) pour afficher/cacher les détails
   const toggleExpand = (id: string) => {
     setExpandedItems((prev) => {
       const next = new Set(prev);
@@ -851,13 +595,7 @@ function App() {
     });
   };
 
-  function splitPublications(text: string): string[] {
-    const articles = text
-      .split(/\n\s*\n/)
-      .filter((article) => article.trim().length > 0);
-    return articles;
-  }
-
+  // Fonction pour exporter les résultats de l'analyse en CSV
   function exportToCSV(
     analysisResults: AnalysisResult,
     searchTools: SearchTool[]
@@ -910,10 +648,17 @@ function App() {
     document.body.removeChild(link);
   }
 
+  const toggleReferenceInputExpand = () => {
+    setIsReferenceInputExpanded(!isReferenceInputExpanded);
+  };
+
+  const toggleSearchToolsExpand = () => {
+    setIsSearchToolsExpanded(!isSearchToolsExpanded);
+  };
+
   //////////////////////
   // Rendu JSX
   //////////////////////
-
   return (
     <div
       className={`min-h-screen transition-colors duration-200 ${
@@ -921,246 +666,56 @@ function App() {
       }`}
     >
       <div className="max-w-7xl mx-auto p-8">
-        {/* Header */}
-        <header className="mb-8 flex justify-between items-center">
-          <div>
-            <h1
-              className={`text-3xl font-bold flex items-center gap-2 ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}
-            >
-              <Search className="w-8 h-8 text-blue-500" />
-              MAIA DRCI
-            </h1>
-            <p
-              className={`mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
-            >
-              Outils de recherche académique
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            {user ? (
-              <>
-                <button
-                  onClick={() => setShowSaveDialog(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                >
-                  <Save className="w-5 h-5" />
-                  Sauvegarder
-                </button>
-                <button
-                  onClick={() => setShowLoadDialog(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  <FolderOpen className="w-5 h-5" />
-                  Charger
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                >
-                  Déconnexion
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setShowLoginDialog(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                Connexion
-              </button>
-            )}
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className={`p-2 rounded-full ${
-                darkMode
-                  ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {darkMode ? (
-                <Sun className="w-5 h-5" />
-              ) : (
-                <Moon className="w-5 h-5" />
-              )}
-            </button>
-          </div>
-        </header>
+        {/* Header de l'application */}
+        <Header
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          user={user}
+          showLoginDialog={showLoginDialog}
+          setShowLoginDialog={setShowLoginDialog}
+          handleLogout={handleLogout}
+          setShowSaveDialog={setShowSaveDialog}
+          setShowLoadDialog={setShowLoadDialog}
+        />
 
-        {/* Zone de saisie des publications de référence */}
-        <div
-          className={`p-6 rounded-lg shadow-sm border ${
-            darkMode
-              ? 'bg-gray-800 border-gray-700'
-              : 'bg-white border-gray-200'
-          }`}
-        >
-          <h2
-            className={`text-xl font-semibold mb-4 ${
-              darkMode ? 'text-white' : 'text-gray-800'
-            }`}
-          >
-            Publications de Référence
-          </h2>
-          <textarea
-            className={`w-full h-40 p-3 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-              darkMode
-                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-            }`}
-            placeholder="Entrez vos publications de référence, séparées par une ligne vide"
-            value={referencePublications}
-            onChange={(e) => setReferencePublications(e.target.value)}
-          />
-        </div>
+        {/* Zone de saisie des publications de référence - Rendu Collapsible */}
+        <ReferencePublicationInput
+          darkMode={darkMode}
+          referencePublications={referencePublications}
+          setReferencePublications={setReferencePublications}
+          isReferenceInputExpanded={isReferenceInputExpanded}
+          toggleReferenceInputExpand={toggleReferenceInputExpand}
+        />
 
-        {/* Liste des publications de référence - Collapsible and Consistent Design */}
-        <div
-          className={`mt-6 p-6 rounded-lg shadow-sm border ${
-            darkMode
-              ? 'bg-gray-800 border-gray-700'
-              : 'bg-white border-gray-200'
-          }`}
-        >
-          <div className="flex justify-between items-center mb-4">
-            <h2
-              className={`text-xl font-semibold ${
-                darkMode ? 'text-white' : 'text-gray-800'
-              } flex items-center gap-2`}
-            >
-              Liste des Publications de Référence
-              <button
-                onClick={() =>
-                  setIsReferenceListExpanded(!isReferenceListExpanded)
-                }
-                className="text-gray-400 hover:text-gray-600"
-              >
-                {isReferenceListExpanded ? (
-                  <ChevronUp size={16} />
-                ) : (
-                  <ChevronDown size={16} />
-                )}
-              </button>
-            </h2>
-          </div>
-          {isReferenceListExpanded &&
-            parsedReferencePublications.length > 0 && (
-              <div>
-                {parsedReferencePublications.map((pub, index) => (
-                  <PublicationDisplay
-                    key={index}
-                    publication={pub}
-                    onEdit={() =>
-                      handleEdit(index.toString(), 'reference', pub)
-                    }
-                    expanded={expandedItems.has(index.toString())}
-                    onToggleExpand={() => toggleExpand(index.toString())}
-                    onDelete={removeArticle}
-                    type="reference"
-                    index={index}
-                    darkMode={darkMode}
-                  />
-                ))}
-              </div>
-            )}
-          {isReferenceListExpanded &&
-            parsedReferencePublications.length === 0 && (
-              <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                Aucune publication de référence saisie.
-              </p>
-            )}
-        </div>
+        {/* Liste des publications de référence */}
+        <ReferencePublicationList
+          darkMode={darkMode}
+          parsedReferencePublications={parsedReferencePublications}
+          isReferenceListExpanded={isReferenceListExpanded}
+          setIsReferenceListExpanded={setIsReferenceListExpanded}
+          expandedItems={expandedItems}
+          toggleExpand={toggleExpand}
+          handleEdit={handleEdit}
+          removeArticle={removeArticle}
+        />
 
-        {/* Outils de recherche */}
-        <div
-          className={`p-6 rounded-lg shadow-sm border ${
-            darkMode
-              ? 'bg-gray-800 border-gray-700'
-              : 'bg-white border-gray-200'
-          } mt-8`}
-        >
-          <div className="flex justify-between items-center mb-4">
-            <h2
-              className={`text-xl font-semibold ${
-                darkMode ? 'text-white' : 'text-gray-800'
-              }`}
-            >
-              Outils de Recherche
-            </h2>
-            <button
-              onClick={addSearchTool}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <PlusCircle className="w-5 h-5" />
-              Ajouter un Outil
-            </button>
-          </div>
-          <div className="space-y-4">
-            {searchTools.map((tool, index) => (
-              <div
-                key={tool.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, tool.id)}
-                onDragEnd={handleDragEnd}
-                onDragOver={(e) => handleDragOver(e, tool.id)}
-                onDrop={(e) => handleDrop(e, tool.id)}
-                className={`border rounded-lg p-4 transition-all duration-200 ${
-                  darkMode
-                    ? 'border-gray-700 bg-gray-750'
-                    : 'border-gray-200 bg-white'
-                } ${
-                  dragOverTool === tool.id
-                    ? 'border-blue-500 transform scale-[1.02]'
-                    : ''
-                }`}
-              >
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-4 flex-1">
-                    <button
-                      className={`cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                        darkMode ? 'text-gray-400' : 'text-gray-500'
-                      }`}
-                    >
-                      <GripVertical className="w-5 h-5" />
-                    </button>
-                    <input
-                      type="text"
-                      placeholder="Nom de l'outil (ex : Google Scholar)"
-                      className={`flex-1 p-2 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        darkMode
-                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                      }`}
-                      value={tool.name}
-                      onChange={(e) =>
-                        updateSearchTool(tool.id, 'name', e.target.value)
-                      }
-                    />
-                    <button
-                      onClick={() => removeSearchTool(tool.id)}
-                      className="text-red-500 hover:text-red-600 p-1"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  className={`w-full h-32 p-3 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    darkMode
-                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                  }`}
-                  placeholder="Collez les résultats de recherche de cet outil"
-                  value={tool.results}
-                  onChange={(e) =>
-                    updateSearchTool(tool.id, 'results', e.target.value)
-                  }
-                />
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Outils de recherche - Rendu Collapsible */}
+        <SearchToolsSection
+          darkMode={darkMode}
+          searchTools={searchTools}
+          addSearchTool={addSearchTool}
+          removeSearchTool={removeSearchTool}
+          updateSearchTool={updateSearchTool}
+          handleDragStart={handleDragStart}
+          handleDragEnd={handleDragEnd}
+          handleDragOver={handleDragOver}
+          handleDrop={handleDrop}
+          dragOverTool={dragOverTool}
+          isSearchToolsExpanded={isSearchToolsExpanded}
+          toggleSearchToolsExpand={toggleSearchToolsExpand}
+        />
 
+        {/* Boutons d'analyse et d'export */}
         <div className="flex justify-center gap-4 mt-8">
           <button
             onClick={analyzeResults}
@@ -1186,479 +741,62 @@ function App() {
           )}
         </div>
 
+        {/* Affichage des résultats de l'analyse */}
         {analysisResults && (
-          <div className="space-y-8 mt-8">
-            <div
-              className={`p-6 rounded-lg shadow-sm border ${
-                darkMode
-                  ? 'bg-gray-800 border-gray-700'
-                  : 'bg-white border-gray-200'
-              }`}
-            >
-              <h2
-                className={`text-xl font-semibold mb-4 ${
-                  darkMode ? 'text-white' : 'text-gray-800'
-                }`}
-              >
-                Présence des Publications de Référence par Outil
-              </h2>
-              {analysisResults.referencePresence.length === 0 ? (
-                <p
-                  className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}
-                >
-                  Aucune publication de référence analysée.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table
-                    className={`min-w-full divide-y ${
-                      darkMode ? 'divide-gray-700' : 'divide-gray-200'
-                    }`}
-                  >
-                    <thead>
-                      <tr>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                            darkMode
-                              ? 'bg-gray-700 text-gray-300'
-                              : 'bg-gray-50 text-gray-500'
-                          }`}
-                        >
-                          Publication
-                        </th>
-                        {searchTools.map((tool) => (
-                          <th
-                            key={tool.id}
-                            className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                              darkMode
-                                ? 'bg-gray-700 text-gray-300'
-                                : 'bg-gray-50 text-gray-500'
-                            }`}
-                          >
-                            {tool.name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody
-                      className={`divide-y ${
-                        darkMode ? 'divide-gray-700' : 'divide-gray-200'
-                      }`}
-                    >
-                      {analysisResults.referencePresence.map((item, index) => (
-                        <tr
-                          key={index}
-                          className={darkMode ? 'bg-gray-800' : 'bg-white'}
-                        >
-                          <td
-                            className={`px-6 py-4 text-sm ${
-                              darkMode ? 'text-gray-300' : 'text-gray-900'
-                            }`}
-                          >
-                            {editing?.id === index.toString() &&
-                            editing.type === 'reference' ? (
-                              <PublicationEditor
-                                publication={editing.publication}
-                                onSave={handleSaveEdit}
-                                onCancel={() => setEditing(null)}
-                                darkMode={darkMode}
-                              />
-                            ) : (
-                              <PublicationDisplay
-                                publication={item.parsed}
-                                onEdit={() =>
-                                  handleEdit(
-                                    index.toString(),
-                                    'reference',
-                                    item.parsed
-                                  )
-                                }
-                                expanded={expandedItems.has(index.toString())}
-                                onToggleExpand={() =>
-                                  toggleExpand(index.toString())
-                                }
-                                onDelete={removeArticle}
-                                type="reference"
-                                index={index}
-                                darkMode={darkMode}
-                              />
-                            )}
-                          </td>
-                          {searchTools.map((tool) => (
-                            <td
-                              key={tool.id}
-                              className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                darkMode ? 'text-gray-300' : 'text-gray-500'
-                              }`}
-                            >
-                              {item.presence[tool.id] ? '✅' : '❌'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            <div
-              className={`p-6 rounded-lg shadow-sm border ${
-                darkMode
-                  ? 'bg-gray-800 border-gray-700'
-                  : 'bg-white border-gray-200'
-              }`}
-            >
-              <h2
-                className={`text-xl font-semibold mb-4 ${
-                  darkMode ? 'text-white' : 'text-gray-800'
-                }`}
-              >
-                Autres Articles Trouvés (Non Référencés) par Outil
-              </h2>
-              {analysisResults.otherArticles.length === 0 ? (
-                <p
-                  className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}
-                >
-                  Aucun autre article trouvé.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table
-                    className={`min-w-full divide-y ${
-                      darkMode ? 'divide-gray-700' : 'divide-gray-200'
-                    }`}
-                  >
-                    <thead>
-                      <tr>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                            darkMode
-                              ? 'bg-gray-700 text-gray-300'
-                              : 'bg-gray-50 text-gray-500'
-                          }`}
-                        >
-                          Article
-                        </th>
-                        {searchTools.map((tool) => (
-                          <th
-                            key={tool.id}
-                            className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                              darkMode
-                                ? 'bg-gray-700 text-gray-300'
-                                : 'bg-gray-50 text-gray-500'
-                            }`}
-                          >
-                            {tool.name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody
-                      className={`divide-y ${
-                        darkMode ? 'divide-gray-700' : 'divide-gray-200'
-                      }`}
-                    >
-                      {analysisResults.otherArticles.map((item, index) => (
-                        <tr
-                          key={index}
-                          className={darkMode ? 'bg-gray-800' : 'bg-white'}
-                        >
-                          <td
-                            className={`px-6 py-4 text-sm ${
-                              darkMode ? 'text-gray-300' : 'text-gray-900'
-                            }`}
-                          >
-                            {editing?.id === index.toString() &&
-                            editing.type === 'other' ? (
-                              <PublicationEditor
-                                publication={editing.publication}
-                                onSave={handleSaveEdit}
-                                onCancel={() => setEditing(null)}
-                                darkMode={darkMode}
-                              />
-                            ) : (
-                              <PublicationDisplay
-                                publication={item.parsed}
-                                onEdit={() =>
-                                  handleEdit(
-                                    index.toString(),
-                                    'other',
-                                    item.parsed
-                                  )
-                                }
-                                expanded={expandedItems.has(`other-${index}`)}
-                                onToggleExpand={() =>
-                                  toggleExpand(`other-${index}`)
-                                }
-                                onDelete={removeArticle}
-                                type="other"
-                                index={index}
-                                darkMode={darkMode}
-                              />
-                            )}
-                          </td>
-                          {searchTools.map((tool) => (
-                            <td
-                              key={tool.id}
-                              className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                darkMode ? 'text-gray-300' : 'text-gray-500'
-                              }`}
-                            >
-                              {item.presence[tool.id] ? '✅' : '❌'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
+          <AnalysisResultsSection
+            darkMode={darkMode}
+            analysisResults={analysisResults}
+            searchTools={searchTools}
+            editing={editing}
+            setEditing={setEditing}
+            handleEdit={handleEdit}
+            handleSaveEdit={handleSaveEdit}
+            expandedItems={expandedItems}
+            toggleExpand={toggleExpand}
+            removeArticle={removeArticle}
+          />
         )}
       </div>
 
       {/* Dialogue de sauvegarde */}
-      {showSaveDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div
-            className={`p-6 rounded-lg shadow-lg ${
-              darkMode ? 'bg-gray-800' : 'bg-white'
-            } max-w-md w-full`}
-          >
-            <h3
-              className={`text-xl font-semibold mb-4 ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}
-            >
-              Sauvegarder l'analyse
-            </h3>
-            <input
-              type="text"
-              placeholder="Nom de l'analyse"
-              value={currentAnalysisName}
-              onChange={(e) => setCurrentAnalysisName(e.target.value)}
-              className={`w-full p-2 mb-4 rounded-md ${
-                darkMode
-                  ? 'bg-gray-700 border-gray-600 text-white'
-                  : 'bg-white border-gray-300 text-gray-900'
-              }`}
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowSaveDialog(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleSaveAnalysis}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                Sauvegarder
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SaveAnalysisDialog
+        showSaveDialog={showSaveDialog}
+        setShowSaveDialog={setShowSaveDialog}
+        darkMode={darkMode}
+        currentAnalysisName={currentAnalysisName}
+        setCurrentAnalysisName={setCurrentAnalysisName}
+        handleSaveAnalysis={handleSaveAnalysis}
+      />
 
       {/* Dialogue de chargement */}
-      {showLoadDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div
-            className={`p-6 rounded-lg shadow-lg ${
-              darkMode ? 'bg-gray-800' : 'bg-white'
-            } max-w-md w-full`}
-          >
-            <h3
-              className={`text-xl font-semibold mb-4 ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}
-            >
-              Charger une analyse
-            </h3>
-            <div className="max-h-96 overflow-y-auto">
-              {savedAnalyses.map((analysis) => (
-                <div // Changed from button to div for layout flexibility
-                  key={analysis.id}
-                  className={`w-full p-4 rounded-md mb-2 flex justify-between items-center ${
-                    darkMode
-                      ? 'hover:bg-gray-700 bg-gray-750'
-                      : 'hover:bg-gray-100 bg-gray-50'
-                  }`}
-                >
-                  <div>
-                    {renameAnalysisId === analysis.id ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={newAnalysisName}
-                          onChange={(e) => setNewAnalysisName(e.target.value)}
-                          className={`p-2 rounded-md ${
-                            darkMode
-                              ? 'bg-gray-700 border-gray-600 text-white'
-                              : 'bg-white border-gray-300 text-gray-900'
-                          }`}
-                        />
-                        <button
-                          onClick={() =>
-                            handleRenameAnalysisConfirm(analysis.id)
-                          }
-                          className="px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-                        >
-                          Enregistrer
-                        </button>
-                        <button
-                          onClick={handleRenameAnalysisCancel}
-                          className="px-2 py-1 text-gray-600 hover:text-gray-800 text-sm"
-                        >
-                          Annuler
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        className={`font-medium cursor-pointer ${
-                          darkMode ? 'text-white' : 'text-gray-900'
-                        }`}
-                        onClick={() => handleLoadAnalysis(analysis.id)} // Load on name click
-                      >
-                        {analysis.name}
-                      </div>
-                    )}
-                    <div
-                      className={`text-sm ${
-                        darkMode ? 'text-gray-400' : 'text-gray-500'
-                      }`}
-                    >
-                      {new Date(analysis.created_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {renameAnalysisId !== analysis.id && (
-                      <button
-                        onClick={() =>
-                          handleRenameAnalysisStart(analysis.id, analysis.name)
-                        }
-                        className="p-2 text-gray-500 hover:text-blue-600"
-                        aria-label="Renommer"
-                      >
-                        <Edit size={16} />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleDeleteAnalysis(analysis.id)}
-                      className="p-2 text-gray-500 hover:text-red-600"
-                      aria-label="Supprimer"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end mt-4">
-              <button
-                onClick={() => setShowLoadDialog(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              >
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LoadAnalysisDialog
+        showLoadDialog={showLoadDialog}
+        setShowLoadDialog={setShowLoadDialog}
+        darkMode={darkMode}
+        savedAnalyses={savedAnalyses}
+        renameAnalysisId={renameAnalysisId}
+        newAnalysisName={newAnalysisName}
+        setNewAnalysisName={setNewAnalysisName}
+        handleLoadAnalysis={handleLoadAnalysis}
+        handleRenameAnalysisStart={handleRenameAnalysisStart}
+        handleRenameAnalysisCancel={handleRenameAnalysisCancel}
+        handleRenameAnalysisConfirm={handleRenameAnalysisConfirm}
+        handleDeleteAnalysis={handleDeleteAnalysis}
+      />
 
       {/* Dialogue de connexion (email / mot de passe) */}
-      {showLoginDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div
-            className={`p-6 rounded-lg shadow-lg ${
-              darkMode ? 'bg-gray-800' : 'bg-white'
-            } max-w-md w-full`}
-          >
-            <h3
-              className={`text-xl font-semibold mb-4 ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}
-            >
-              {isRegistering ? 'Créer un compte' : 'Connexion'}
-            </h3>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label
-                  className={`block text-sm font-medium ${
-                    darkMode ? 'text-gray-300' : 'text-gray-700'
-                  } mb-1`}
-                >
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className={`w-full p-2 rounded-md ${
-                    darkMode
-                      ? 'bg-gray-700 border-gray-600 text-white'
-                      : 'bg-white border-gray-300 text-gray-900'
-                  }`}
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-medium ${
-                    darkMode ? 'text-gray-300' : 'text-gray-700'
-                  } mb-1`}
-                >
-                  Mot de passe
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={`w-full p-2 rounded-md ${
-                    darkMode
-                      ? 'bg-gray-700 border-gray-600 text-white'
-                      : 'bg-white border-gray-300 text-gray-900'
-                  }`}
-                  required
-                />
-              </div>
-              <div className="flex justify-between items-center mt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsRegistering(!isRegistering)}
-                  className={`text-sm ${
-                    darkMode ? 'text-blue-400' : 'text-blue-600'
-                  }`}
-                >
-                  {isRegistering
-                    ? 'Déjà un compte ? Se connecter'
-                    : 'Créer un compte'}
-                </button>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginDialog(false)}
-                    className={`px-4 py-2 ${
-                      darkMode ? 'text-gray-300' : 'text-gray-600'
-                    } hover:text-gray-800`}
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  >
-                    {isRegistering ? "S'inscrire" : 'Se connecter'}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <LoginDialog
+        showLoginDialog={showLoginDialog}
+        setShowLoginDialog={setShowLoginDialog}
+        darkMode={darkMode}
+        isRegistering={isRegistering}
+        setIsRegistering={setIsRegistering}
+        email={email}
+        setEmail={setEmail}
+        password={password}
+        setPassword={setPassword}
+        handleLogin={handleLogin}
+      />
     </div>
   );
 }
