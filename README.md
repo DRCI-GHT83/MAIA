@@ -1,6 +1,6 @@
 # MAIA DRCI - Outil d'Analyse de Publications Académiques
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<!--  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) -->
 <!-- Ajoutez ici un badge de statut du projet si applicable (ex: build status, coverage) -->
 
 ## Présentation
